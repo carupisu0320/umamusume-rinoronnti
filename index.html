@@ -324,7 +324,7 @@
 
   <section>
     <h2><span class="num">06</span> サポカ編成の最適化エンジン</h2>
-    <p class="desc">手持ちのカードプールから、指定した重みに基づいて理論値が最大になる6枚編成を探索します。プールが12枚以下なら全組み合わせ総当たり、それより多い場合は貪欲法（1枚ずつ一番スコアが伸びるカードを追加）で近似します。</p>
+    <p class="desc">手持ちのカードプールから、指定した重みに基づいて理論値が最大になる6枚編成を探索します。プールが21枚以下なら全組み合わせ総当たり、それより多い場合は貪欲法（1枚ずつ一番スコアが伸びるカードを追加）で近似します。<br><b>注意：</b>初期データのカード名・タイプは2026年8月時点の実在カードですが、練習効果%・友情ボーナス%などの数値は正確な値が未確認のため暫定の目安です。</p>
 
     <table id="poolTable">
       <thead>
@@ -676,16 +676,31 @@ function handleImportFile(input){
 /* ============================================================
    06 サポカ編成の最適化エンジン
    ============================================================ */
+// 出典: 神ゲー攻略・ゲームエイト（2026年8月時点の最強サポカランキング）
+// カード名・タイプは実在データ。練習効果%/友情ボーナス%/絆ゲージは
+// 正確な数値が確認できなかったため暫定の目安値（要確認）。
 let cardPool = [
-  { name: "候補SSR・スピードA", type: "speed",   bond: 90, trainingBonusPct: 9, friendshipBonusPct: 35, specialty: true  },
-  { name: "候補SSR・スピードB", type: "speed",   bond: 60, trainingBonusPct: 7, friendshipBonusPct: 30, specialty: false },
-  { name: "候補SR・パワーA",   type: "power",   bond: 75, trainingBonusPct: 8, friendshipBonusPct: 30, specialty: false },
-  { name: "候補SR・パワーB",   type: "power",   bond: 40, trainingBonusPct: 5, friendshipBonusPct: 20, specialty: false },
-  { name: "候補SR・スタミナ",  type: "stamina", bond: 60, trainingBonusPct: 6, friendshipBonusPct: 25, specialty: false },
-  { name: "候補SSR・根性",     type: "guts",    bond: 65, trainingBonusPct: 7, friendshipBonusPct: 25, specialty: false },
-  { name: "候補SR・賢さA",     type: "wit",     bond: 50, trainingBonusPct: 5, friendshipBonusPct: 20, specialty: false },
-  { name: "候補SR・賢さB",     type: "wit",     bond: 30, trainingBonusPct: 4, friendshipBonusPct: 15, specialty: false },
-  { name: "候補SR・友人",      type: "friend",  bond: 85, trainingBonusPct: 5, friendshipBonusPct: 40, specialty: true  },
+  { name: "エフフォーリア（SSR・スピード）",   type: "speed",   bond: 80, trainingBonusPct: 9, friendshipBonusPct: 35, specialty: true  },
+  { name: "ミスターシービー（SSR・スピード）", type: "speed",   bond: 60, trainingBonusPct: 7, friendshipBonusPct: 30, specialty: false },
+  { name: "メイショウドトウ（SSR・スタミナ）", type: "stamina", bond: 80, trainingBonusPct: 8, friendshipBonusPct: 35, specialty: true  },
+  { name: "フェノーメノ（SSR・スタミナ）",     type: "stamina", bond: 50, trainingBonusPct: 6, friendshipBonusPct: 25, specialty: false },
+  { name: "グランアレグリア（SSR・パワー）",   type: "power",   bond: 60, trainingBonusPct: 7, friendshipBonusPct: 30, specialty: false },
+  { name: "デアリングハート（SSR・根性）",     type: "guts",    bond: 50, trainingBonusPct: 6, friendshipBonusPct: 25, specialty: false },
+  { name: "フォーエバーヤング（SSR・賢さ）",   type: "wit",     bond: 80, trainingBonusPct: 8, friendshipBonusPct: 35, specialty: true  },
+  { name: "ウインバリアシオン（SSR・賢さ）",   type: "wit",     bond: 50, trainingBonusPct: 6, friendshipBonusPct: 25, specialty: false },
+  { name: "駿川たづなSSR・新（友人）",         type: "friend",  bond: 85, trainingBonusPct: 5, friendshipBonusPct: 40, specialty: true  },
+  { name: "トウカイテイオー（SSR・スピード）", type: "speed",   bond: 80, trainingBonusPct: 9, friendshipBonusPct: 35, specialty: true  },
+  { name: "エアグルーヴ（SSR・スピード）",     type: "speed",   bond: 70, trainingBonusPct: 8, friendshipBonusPct: 30, specialty: true  },
+  { name: "タップダンスシチー（SSR・スピード）", type: "speed", bond: 60, trainingBonusPct: 7, friendshipBonusPct: 30, specialty: false },
+  { name: "アーモンドアイ（SSR・スピード）",   type: "speed",   bond: 50, trainingBonusPct: 6, friendshipBonusPct: 25, specialty: false },
+  { name: "サクラチヨノオー（SSR・スタミナ）", type: "stamina", bond: 60, trainingBonusPct: 7, friendshipBonusPct: 30, specialty: false },
+  { name: "ドゥラメンテ（SSR・スタミナ）",     type: "stamina", bond: 50, trainingBonusPct: 6, friendshipBonusPct: 25, specialty: false },
+  { name: "ネオユニヴァース（SSR・パワー）",   type: "power",   bond: 60, trainingBonusPct: 7, friendshipBonusPct: 30, specialty: false },
+  { name: "ファインモーション（SSR・パワー）", type: "power",   bond: 50, trainingBonusPct: 6, friendshipBonusPct: 25, specialty: false },
+  { name: "デアリングタクト（SSR・根性）",     type: "guts",    bond: 50, trainingBonusPct: 6, friendshipBonusPct: 25, specialty: false },
+  { name: "シオン（SSR・賢さ）",               type: "wit",     bond: 50, trainingBonusPct: 6, friendshipBonusPct: 25, specialty: false },
+  { name: "タマモクロス（SSR・パワー）",       type: "power",   bond: 50, trainingBonusPct: 6, friendshipBonusPct: 25, specialty: false },
+  { name: "ヴィブロス（SSR・スピード）",       type: "speed",   bond: 60, trainingBonusPct: 7, friendshipBonusPct: 30, specialty: false },
 ];
 
 function renderPoolTable(){
@@ -805,7 +820,7 @@ function runOptimizer(){
   let bestDeck, method;
   const totalCombos = nCk(cardPool.length, deckSize);
 
-  if(totalCombos <= 5000){
+  if(totalCombos <= 60000){
     const combos = combinations(cardPool, deckSize);
     let bestScore = -Infinity;
     combos.forEach(combo => {
