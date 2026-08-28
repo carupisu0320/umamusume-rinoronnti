@@ -206,7 +206,7 @@
 <main>
 
   <div class="notice">
-    <b>このプロトタイプについて：</b> 使用している基礎トレーニング値・友情ボーナス倍率・やる気補正は、正式なデータマイニング値ではなく暫定の近似値です。エンジンの構造（サポカ→練習効果→やる気→友情ボーナス→合計）を確認するためのもので、実際の数値は後で正確なデータに差し替えます。
+    <b>このプロトタイプについて：</b> 計算エンジンの基礎トレーニング値は神ゲー攻略のグランドライブシナリオ基準のままです。一方「05」のマスターデータでは現行シナリオを「トレセン軒」としており、このシナリオのレベル別トレーニング上昇値はまだ未確認のため、基礎値の差し替えは保留中です。友情ボーナス倍率・やる気補正も暫定の近似値です。
   </div>
 
   <section>
@@ -295,6 +295,63 @@
     <button class="calc-btn" style="background:#7a7462;" onclick="loadAll()">読み込み</button>
     <input type="file" id="importFile" accept="application/json" style="display:none" onchange="handleImportFile(this)">
     <p id="storageStatus" style="font-size:12px; color:#7a7462; margin-top:10px;"></p>
+  </section>
+
+  <section>
+    <h2><span class="num">05</span> 因子・シナリオのマスターデータ</h2>
+    <p class="desc">合言葉に関係なく、このツールを使う全員で共有されるゲーム側のデータです（2026年8月時点の情報を初期値として入れています）。JSONを直接編集して「反映」すると一覧に反映され、「マスターデータを保存」でクラウドに公開できます。</p>
+
+    <div class="row-flex">
+      <div class="field">
+        <label>シナリオ一覧</label>
+        <div id="scenarioList" style="font-size:12.5px; line-height:1.8;"></div>
+      </div>
+      <div class="field">
+        <label>因子一覧</label>
+        <div id="factorList" style="font-size:12.5px; line-height:1.8;"></div>
+      </div>
+    </div>
+
+    <br>
+    <label style="font-size:11px; color:#7a7462; display:block; margin-bottom:4px;">JSONで編集（{ scenarios: [...], factors: [...] } の形式）</label>
+    <textarea id="masterJson" style="width:100%; height:180px; font-family:monospace; font-size:11.5px; padding:8px; border:1px solid var(--line); border-radius:5px;"></textarea>
+    <br><br>
+    <button class="calc-btn" onclick="applyMasterJson()">反映</button>
+    <button class="calc-btn" onclick="saveMaster()">マスターデータを保存</button>
+    <button class="calc-btn" style="background:#7a7462;" onclick="loadMaster()">マスターデータを読み込み</button>
+    <p id="masterStatus" style="font-size:12px; color:#7a7462; margin-top:10px;"></p>
+  </section>
+
+  <section>
+    <h2><span class="num">06</span> サポカ編成の最適化エンジン</h2>
+    <p class="desc">手持ちのカードプールから、指定した重みに基づいて理論値が最大になる6枚編成を探索します。プールが12枚以下なら全組み合わせ総当たり、それより多い場合は貪欲法（1枚ずつ一番スコアが伸びるカードを追加）で近似します。</p>
+
+    <table id="poolTable">
+      <thead>
+        <tr>
+          <th style="width:26px;"></th>
+          <th>カード名</th>
+          <th>タイプ</th>
+          <th>絆ゲージ</th>
+          <th>練習効果%</th>
+          <th>友情ボーナス%</th>
+          <th>得意率</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="poolBody"></tbody>
+    </table>
+    <br>
+    <button class="calc-btn" style="background:#7a7462;" onclick="addPoolCard()">＋ カードを追加</button>
+
+    <br><br>
+    <label style="font-size:11px; color:#7a7462; display:block; margin-bottom:6px;">目的の重み（大きいほど優先されるステータス）</label>
+    <div class="row-flex" id="weightInputs"></div>
+
+    <br>
+    <button class="calc-btn" onclick="runOptimizer()">最適編成を探索</button>
+    <p id="optimizerStatus" style="font-size:12px; color:#7a7462; margin-top:10px;"></p>
+    <div class="result-box" id="optimizerResult"></div>
   </section>
 
 </main>
@@ -616,16 +673,276 @@ function handleImportFile(input){
   reader.readAsText(file);
 }
 
+/* ============================================================
+   06 サポカ編成の最適化エンジン
+   ============================================================ */
+let cardPool = [
+  { name: "候補SSR・スピードA", type: "speed",   bond: 90, trainingBonusPct: 9, friendshipBonusPct: 35, specialty: true  },
+  { name: "候補SSR・スピードB", type: "speed",   bond: 60, trainingBonusPct: 7, friendshipBonusPct: 30, specialty: false },
+  { name: "候補SR・パワーA",   type: "power",   bond: 75, trainingBonusPct: 8, friendshipBonusPct: 30, specialty: false },
+  { name: "候補SR・パワーB",   type: "power",   bond: 40, trainingBonusPct: 5, friendshipBonusPct: 20, specialty: false },
+  { name: "候補SR・スタミナ",  type: "stamina", bond: 60, trainingBonusPct: 6, friendshipBonusPct: 25, specialty: false },
+  { name: "候補SSR・根性",     type: "guts",    bond: 65, trainingBonusPct: 7, friendshipBonusPct: 25, specialty: false },
+  { name: "候補SR・賢さA",     type: "wit",     bond: 50, trainingBonusPct: 5, friendshipBonusPct: 20, specialty: false },
+  { name: "候補SR・賢さB",     type: "wit",     bond: 30, trainingBonusPct: 4, friendshipBonusPct: 15, specialty: false },
+  { name: "候補SR・友人",      type: "friend",  bond: 85, trainingBonusPct: 5, friendshipBonusPct: 40, specialty: true  },
+];
+
+function renderPoolTable(){
+  const tbody = document.getElementById("poolBody");
+  tbody.innerHTML = "";
+  cardPool.forEach((c, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><span class="type-badge ${typeClass(c.type)}"></span></td>
+      <td><input type="text" value="${c.name}" onchange="cardPool[${i}].name=this.value"></td>
+      <td>
+        <select onchange="cardPool[${i}].type=this.value; renderPoolTable();">
+          ${["speed","stamina","power","guts","wit","friend"].map(t=>
+            `<option value="${t}" ${c.type===t?"selected":""}>${t}</option>`).join("")}
+        </select>
+      </td>
+      <td><input type="number" value="${c.bond}" min="0" max="100" onchange="cardPool[${i}].bond=Number(this.value)"></td>
+      <td><input type="number" value="${c.trainingBonusPct}" onchange="cardPool[${i}].trainingBonusPct=Number(this.value)"></td>
+      <td><input type="number" value="${c.friendshipBonusPct}" onchange="cardPool[${i}].friendshipBonusPct=Number(this.value)"></td>
+      <td><input type="checkbox" ${c.specialty?"checked":""} onchange="cardPool[${i}].specialty=this.checked"></td>
+      <td><button class="calc-btn" style="background:#c0504d; padding:6px 10px; font-size:11px;" onclick="removePoolCard(${i})">削除</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function addPoolCard(){
+  cardPool.push({ name: "新しいカード", type: "speed", bond: 0, trainingBonusPct: 0, friendshipBonusPct: 0, specialty: false });
+  renderPoolTable();
+}
+
+function removePoolCard(i){
+  cardPool.splice(i, 1);
+  renderPoolTable();
+}
+
+function renderWeightInputs(){
+  const wrap = document.getElementById("weightInputs");
+  wrap.innerHTML = CONFIG.facilities.map(f => `
+    <div class="field" style="min-width:100px;">
+      <label><span class="type-badge ${typeClass(f.type)}"></span>${f.label}</label>
+      <input type="number" id="weight_${f.key}" value="1" min="0" step="0.5">
+    </div>
+  `).join("");
+}
+
+function getWeights(){
+  const w = {};
+  CONFIG.facilities.forEach(f => { w[f.key] = Number(document.getElementById(`weight_${f.key}`).value); });
+  return w;
+}
+
+// 6枚（デッキ）のスコアを計算する。calcPlanと同じ考え方：
+// デッキ全体の練習効果%合計・友情ボーナス最大値・得意ボーナスを、
+// 各施設の基礎値(Lv5)×重みに掛けて合計する。
+function scoreDeck(deck, weights){
+  const trainingBonusSum = deck.reduce((s, c) => s + c.trainingBonusPct, 0) / 100;
+  const friendshipBonus = Math.max(0, ...deck.filter(c => c.bond >= CONFIG.friendshipThreshold).map(c => c.friendshipBonusPct / 100), 0);
+
+  let total = 0;
+  CONFIG.facilities.forEach(f => {
+    const base = f.baseByLevel[4];
+    const specialtyBonus = deck.some(c => c.specialty && c.type === f.type) ? CONFIG.specialtyBonus : 0;
+    const multiplier = 1 + trainingBonusSum + friendshipBonus + specialtyBonus;
+    total += weights[f.key] * base * multiplier;
+  });
+  return total;
+}
+
+function combinations(arr, k){
+  const results = [];
+  function helper(start, combo){
+    if(combo.length === k){ results.push(combo.slice()); return; }
+    for(let i = start; i < arr.length; i++){
+      combo.push(arr[i]);
+      helper(i + 1, combo);
+      combo.pop();
+    }
+  }
+  helper(0, []);
+  return results;
+}
+
+function nCk(n, k){
+  if(k > n) return 0;
+  let result = 1;
+  for(let i = 0; i < k; i++){ result = result * (n - i) / (i + 1); }
+  return Math.round(result);
+}
+
+function greedySearch(pool, deckSize, weights){
+  let deck = [];
+  let remaining = pool.slice();
+  for(let i = 0; i < deckSize && remaining.length > 0; i++){
+    let bestIdx = 0, bestScore = -Infinity;
+    remaining.forEach((c, idx) => {
+      const score = scoreDeck([...deck, c], weights);
+      if(score > bestScore){ bestScore = score; bestIdx = idx; }
+    });
+    deck.push(remaining[bestIdx]);
+    remaining.splice(bestIdx, 1);
+  }
+  return deck;
+}
+
+function runOptimizer(){
+  const status = document.getElementById("optimizerStatus");
+  const resultBox = document.getElementById("optimizerResult");
+  const weights = getWeights();
+  const deckSize = Math.min(6, cardPool.length);
+
+  if(cardPool.length < 1){
+    status.textContent = "カードプールが空です";
+    return;
+  }
+
+  let bestDeck, method;
+  const totalCombos = nCk(cardPool.length, deckSize);
+
+  if(totalCombos <= 5000){
+    const combos = combinations(cardPool, deckSize);
+    let bestScore = -Infinity;
+    combos.forEach(combo => {
+      const s = scoreDeck(combo, weights);
+      if(s > bestScore){ bestScore = s; bestDeck = combo; }
+    });
+    method = `全組み合わせ総当たり（${totalCombos}通り）`;
+  } else {
+    bestDeck = greedySearch(cardPool, deckSize, weights);
+    method = "貪欲法（近似解）";
+  }
+
+  const bestScore = scoreDeck(bestDeck, weights);
+
+  status.textContent = `${method}で探索しました`;
+  resultBox.innerHTML = `
+    <div class="result-card" style="grid-column: 1 / -1;">
+      <div class="label">最適編成（重み付きスコア: ${bestScore.toFixed(1)}）</div>
+      <div style="margin-top:8px; font-size:13px; line-height:1.8;">
+        ${bestDeck.map(c => `<span class="type-badge ${typeClass(c.type)}"></span>${c.name}`).join("<br>")}
+      </div>
+    </div>
+  `;
+}
+   出典: 神ゲー攻略・ゲームエイト（2026年8月時点の情報）
+   「らっしゃい！トレセン軒！〜恩返し、始めました〜」が2026年6月頃
+   実装、2026年10月頃の次シナリオ実装まで対人育成の標準シナリオ。
+   ============================================================ */
+let masterScenarios = [
+  {
+    id: "scenario_tresenken",
+    name: "らっしゃい！トレセン軒！〜恩返し、始めました〜",
+    status: "current",
+    period: "2026年6月頃〜2026年10月頃（次シナリオ実装まで）",
+    scenarioFactorEffect: "パワー・根性アップ",
+    statCaps: { speed: 2150, stamina: 1800, power: 1700, guts: 1700, wit: 1800 },
+    note: "2026年8月時点で対人育成の標準シナリオ。特殊コマンド「試食会」でトレ効果・友情ボーナス・ヒント獲得を強化できる。基礎能力上限はBeyond Dreamsよりスピード・スタミナが増加。レベル別のトレーニング上昇値一覧は未確認のため、計算エンジン（CONFIG）はまだグランドライブ基準の値を使用中。",
+    source: { site: "kamigame / game8 / famitsu / 個人ブログ(統計上限値)", fetchedAt: "2026-08-28" }
+  },
+  {
+    id: "scenario_beyond_dreams",
+    name: "Beyond Dreams",
+    status: "previous",
+    period: "トレセン軒実装前の周回シナリオ",
+    scenarioFactorEffect: "（要確認）",
+    note: "周回速度重視の育成に向く前シナリオ。因子の質を重視するならトレセン軒が優先される。",
+    source: { site: "note.com（れい氏まとめ）", fetchedAt: "2026-08-28" }
+  }
+];
+
+let masterFactors = [
+  { id: "factor_speed",   category: "stat", name: "スピード因子", starsMax: 3 },
+  { id: "factor_stamina", category: "stat", name: "スタミナ因子", starsMax: 3 },
+  { id: "factor_power",   category: "stat", name: "パワー因子",   starsMax: 3 },
+  { id: "factor_guts",    category: "stat", name: "根性因子",     starsMax: 3 },
+  { id: "factor_wit",     category: "stat", name: "賢さ因子",     starsMax: 3 },
+  {
+    id: "factor_scenario_tresenken",
+    category: "scenario",
+    name: "トレセン軒シナリオ因子（パワー・根性アップ）",
+    starsMax: 3,
+    note: "パワーサポカを編成しない場合に特に有用",
+    source: { site: "game8", fetchedAt: "2026-08-28" }
+  }
+];
+
+function renderMasterLists(){
+  document.getElementById("scenarioList").innerHTML = masterScenarios.map(s =>
+    `<div style="margin-bottom:8px;">
+      <b>${s.name}</b>${s.status==="current" ? ' <span style="color:var(--turf-green);">●現行</span>' : ''}<br>
+      <span style="color:#7a7462;">${s.period || ""}</span>
+    </div>`
+  ).join("");
+
+  document.getElementById("factorList").innerHTML = masterFactors.map(f =>
+    `<div style="margin-bottom:6px;">
+      <span class="type-badge ${typeClass(f.category==="stat" ? (f.id.replace("factor_","")) : "friend")}"></span>
+      ${f.name}${f.starsMax ? ` (★1〜${f.starsMax})` : ""}
+    </div>`
+  ).join("");
+
+  document.getElementById("masterJson").value =
+    JSON.stringify({ scenarios: masterScenarios, factors: masterFactors }, null, 2);
+}
+
+function applyMasterJson(){
+  const status = document.getElementById("masterStatus");
+  try{
+    const data = JSON.parse(document.getElementById("masterJson").value);
+    if(data.scenarios) masterScenarios = data.scenarios;
+    if(data.factors) masterFactors = data.factors;
+    renderMasterLists();
+    status.textContent = "反映しました";
+  }catch(e){
+    status.textContent = "JSONの形式が正しくありません";
+  }
+}
+
+async function saveMaster(){
+  const status = document.getElementById("masterStatus");
+  if(!Store.available){
+    status.textContent = "Firebase未設定のため保存できません（読み込み専用のJSONとして扱ってください）";
+    return;
+  }
+  const ok1 = await Store.save("global_master_scenarios", masterScenarios);
+  const ok2 = await Store.save("global_master_factors", masterFactors);
+  status.textContent = (ok1 && ok2) ? "マスターデータをクラウドに公開しました（全員に共有されます）" : "保存に失敗した項目があります";
+}
+
+async function loadMaster(){
+  const status = document.getElementById("masterStatus");
+  if(!Store.available){
+    status.textContent = "Firebase未設定のため読み込めません";
+    return;
+  }
+  const savedScenarios = await Store.load("global_master_scenarios");
+  const savedFactors = await Store.load("global_master_factors");
+  if(savedScenarios) masterScenarios = savedScenarios;
+  if(savedFactors) masterFactors = savedFactors;
+  renderMasterLists();
+  status.textContent = (savedScenarios || savedFactors) ? "クラウドから読み込みました" : "クラウド側にまだデータはありません（初期値を表示中）";
+}
+
 // init
 renderCardTable();
 renderFacilityTabs();
 renderFacilityCheckboxes();
 renderPlanTable();
+renderMasterLists();
+renderPoolTable();
+renderWeightInputs();
 const savedRoomId = localStorage.getItem("umaToolRoomId");
 if(savedRoomId){
   document.getElementById("roomId").value = savedRoomId;
   if(Store.available){ loadAll(); }
 }
+if(Store.available){ loadMaster(); }
 </script>
 
 </body>
