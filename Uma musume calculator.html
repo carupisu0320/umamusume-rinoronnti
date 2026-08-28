@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>理論値計算エンジン - プロトタイプ</title>
+<style>
+  :root{
+    --turf-green:#1f4d3a;
+    --turf-green-dark:#123023;
+    --rail-white:#f4f1e8;
+    --dirt-tan:#c9a876;
+    --speed-blue:#2f6fed;
+    --stamina-red:#d94a4a;
+    --power-orange:#e08a2b;
+    --guts-pink:#e0508f;
+    --wit-green:#3ea36e;
+    --ink:#1b2320;
+    --paper:#fffdf8;
+    --line:#d8d2c2;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--rail-white);
+    color:var(--ink);
+    font-family:"Hiragino Sans","Yu Gothic",sans-serif;
+    padding:0 0 60px;
+  }
+  header{
+    background:linear-gradient(135deg,var(--turf-green),var(--turf-green-dark));
+    color:var(--rail-white);
+    padding:28px 24px 24px;
+    position:relative;
+    overflow:hidden;
+  }
+  header::after{
+    content:"";
+    position:absolute;
+    right:-40px; top:-40px;
+    width:180px; height:180px;
+    border:6px solid rgba(255,255,255,0.08);
+    border-radius:50%;
+  }
+  header h1{
+    margin:0 0 4px;
+    font-size:22px;
+    letter-spacing:0.02em;
+  }
+  header p{
+    margin:0;
+    font-size:13px;
+    opacity:0.75;
+    max-width:560px;
+    line-height:1.6;
+  }
+  .track-line{
+    height:4px;
+    background:repeating-linear-gradient(90deg, var(--dirt-tan) 0 18px, transparent 18px 30px);
+    margin-top:18px;
+  }
+  main{
+    max-width:920px;
+    margin:0 auto;
+    padding:24px;
+  }
+  .notice{
+    background:#fff8e6;
+    border:1px solid #e8d9a8;
+    border-radius:8px;
+    padding:12px 16px;
+    font-size:12.5px;
+    line-height:1.7;
+    color:#6b5a1f;
+    margin-bottom:24px;
+  }
+  .notice b{color:#4a3d10;}
+  section{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:20px;
+    margin-bottom:20px;
+  }
+  section h2{
+    font-size:14px;
+    margin:0 0 4px;
+    display:flex;
+    align-items:baseline;
+    gap:8px;
+  }
+  section h2 .num{
+    font-size:11px;
+    color:#8a8370;
+    font-weight:600;
+    letter-spacing:0.08em;
+  }
+  section .desc{
+    font-size:12px;
+    color:#7a7462;
+    margin:0 0 16px;
+    line-height:1.6;
+  }
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th,td{padding:7px 8px; text-align:left; border-bottom:1px solid var(--line);}
+  th{font-size:11px; color:#7a7462; font-weight:600;}
+  input[type="text"], input[type="number"], select{
+    width:100%;
+    padding:6px 8px;
+    border:1px solid var(--line);
+    border-radius:5px;
+    font-size:13px;
+    background:#fff;
+    color:var(--ink);
+  }
+  input[type="number"]{width:70px;}
+  .type-badge{
+    display:inline-block;
+    width:10px; height:10px;
+    border-radius:50%;
+    margin-right:6px;
+    vertical-align:middle;
+  }
+  .type-speed{background:var(--speed-blue);}
+  .type-stamina{background:var(--stamina-red);}
+  .type-power{background:var(--power-orange);}
+  .type-guts{background:var(--guts-pink);}
+  .type-wit{background:var(--wit-green);}
+  .type-friend{background:#999;}
+  .facility-tabs{
+    display:flex;
+    gap:6px;
+    margin-bottom:16px;
+    flex-wrap:wrap;
+  }
+  .facility-tab{
+    padding:7px 14px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:#fff;
+    font-size:12.5px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    user-select:none;
+  }
+  .facility-tab.active{
+    background:var(--turf-green);
+    color:#fff;
+    border-color:var(--turf-green);
+  }
+  .row-flex{display:flex; gap:16px; flex-wrap:wrap;}
+  .field{flex:1; min-width:140px;}
+  .field label{font-size:11px; color:#7a7462; display:block; margin-bottom:4px;}
+  .calc-btn{
+    background:var(--turf-green);
+    color:#fff;
+    border:none;
+    padding:11px 22px;
+    border-radius:6px;
+    font-size:13.5px;
+    cursor:pointer;
+    font-weight:600;
+  }
+  .calc-btn:hover{background:var(--turf-green-dark);}
+  .result-box{
+    margin-top:18px;
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:12px;
+  }
+  .result-card{
+    background:var(--turf-green);
+    color:#fff;
+    border-radius:8px;
+    padding:14px 16px;
+  }
+  .result-card .label{font-size:11px; opacity:0.75; margin-bottom:4px;}
+  .result-card .value{font-size:24px; font-weight:700;}
+  .result-card .sub{font-size:11px; opacity:0.65; margin-top:2px;}
+  .plan-table input{padding:4px 6px;}
+  .plan-total{
+    font-weight:700;
+    background:#f5f2e6;
+  }
+  footer{
+    max-width:920px;
+    margin:0 auto;
+    padding:0 24px;
+    font-size:11.5px;
+    color:#9a927c;
+    line-height:1.7;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>理論値計算エンジン — プロトタイプ</h1>
+  <p>サポートカード編成と練習回数から、育成終了時のステータス理論値を試算します。現時点ではサンプルデータと簡易的な計算式で動作を確認する段階です。</p>
+  <div class="track-line"></div>
+</header>
+
+<main>
+
+  <div class="notice">
+    <b>このプロトタイプについて：</b> 使用している基礎トレーニング値・友情ボーナス倍率・やる気補正は、正式なデータマイニング値ではなく暫定の近似値です。エンジンの構造（サポカ→練習効果→やる気→友情ボーナス→合計）を確認するためのもので、実際の数値は後で正確なデータに差し替えます。
+  </div>
+
+  <section>
+    <h2><span class="num">01</span> サポートカード編成</h2>
+    <p class="desc">6枠に手持ちのサポートカードを入力してください（サンプル値が入っています）。得意率・練習効果%・友情ボーナスはカード個別の性能値です。</p>
+    <table id="cardTable">
+      <thead>
+        <tr>
+          <th style="width:26px;"></th>
+          <th>カード名</th>
+          <th>タイプ</th>
+          <th>絆ゲージ</th>
+          <th>練習効果%</th>
+          <th>友情ボーナス%</th>
+          <th>得意率</th>
+        </tr>
+      </thead>
+      <tbody id="cardBody"></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2><span class="num">02</span> 単発練習シミュレーション</h2>
+    <p class="desc">練習施設を選び、そこに配置されているカードを選択すると、その1回の練習での上昇値を計算します。</p>
+
+    <div class="facility-tabs" id="facilityTabs"></div>
+
+    <div class="row-flex">
+      <div class="field">
+        <label>施設レベル (1〜5)</label>
+        <input type="number" id="facilityLevel" value="5" min="1" max="5">
+      </div>
+      <div class="field">
+        <label>やる気</label>
+        <select id="motivation">
+          <option value="0.2">絶好調 (+20%)</option>
+          <option value="0.1">好調 (+10%)</option>
+          <option value="0" selected>普通 (±0%)</option>
+          <option value="-0.1">不安 (-10%)</option>
+          <option value="-0.2">絶不調 (-20%)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>この施設にいるカード（複数選択可）</label>
+        <div id="cardCheckboxes" style="font-size:12.5px; line-height:2;"></div>
+      </div>
+    </div>
+
+    <br>
+    <button class="calc-btn" onclick="calcSingle()">この練習の上昇値を計算</button>
+
+    <div class="result-box" id="singleResult"></div>
+  </section>
+
+  <section>
+    <h2><span class="num">03</span> 育成プラン全体の理論値</h2>
+    <p class="desc">残りターン数の中で、各ステータスを何回練習するか入力すると、育成終了時点の合計理論値（現在値＋上昇分）を概算します。カード配置は簡略化し、上の編成全体が毎回均等についている前提です。</p>
+
+    <table class="plan-table">
+      <thead>
+        <tr><th>ステータス</th><th>現在値</th><th>練習回数</th><th>1回あたり平均上昇（推定）</th><th>上昇合計</th></tr>
+      </thead>
+      <tbody id="planBody"></tbody>
+      <tfoot>
+        <tr class="plan-total">
+          <td>合計</td><td id="planCurrentTotal">-</td><td id="planCountTotal">-</td><td>-</td><td id="planGainTotal">-</td>
+        </tr>
+      </tfoot>
+    </table>
+    <br>
+    <button class="calc-btn" onclick="calcPlan()">育成プラン全体を計算</button>
+  </section>
+
+</main>
+
+<footer>
+  基礎トレーニング値・友情ボーナス係数はソースコード内の CONFIG オブジェクトにまとめてあります。正確なデータが揃い次第、その部分だけ差し替えれば計算ロジック自体はそのまま使えます。
+</footer>
+
+<script>
+/* ============================================================
+   CONFIG: 暫定の基礎数値。ここを正確なデータマイニング値に
+   差し替えれば、計算ロジックは変更不要。
+   ============================================================ */
+const CONFIG = {
+  facilities: [
+    { key: "speed",   label: "スピード", type: "speed",   baseByLevel: [7,8,9,10,11] },
+    { key: "stamina", label: "スタミナ", type: "stamina", baseByLevel: [6,7,8,9,10] },
+    { key: "power",   label: "パワー",   type: "power",   baseByLevel: [7,8,8,9,10] },
+    { key: "guts",    label: "根性",     type: "guts",    baseByLevel: [6,7,7,8,9] },
+    { key: "wit",     label: "賢さ",     type: "wit",     baseByLevel: [5,6,6,7,8] },
+  ],
+  // 絆ゲージがこの値以上で「友情トレーニング」が発生しうる
+  friendshipThreshold: 80,
+  // 得意率が高いカードが「得意練習（虹枠）」になったときの追加倍率
+  specialtyBonus: 0.20
+};
+
+// サンプルのサポートカード編成（6枚）
+let cards = [
+  { name: "サンプルSSR・スピード", type: "speed",   bond: 90, trainingBonusPct: 9,  friendshipBonusPct: 35, specialty: true  },
+  { name: "サンプルSSR・パワー",   type: "power",   bond: 75, trainingBonusPct: 8,  friendshipBonusPct: 30, specialty: false },
+  { name: "サンプルSR・スタミナ",  type: "stamina", bond: 60, trainingBonusPct: 6,  friendshipBonusPct: 25, specialty: false },
+  { name: "サンプルSR・友人",      type: "friend",  bond: 85, trainingBonusPct: 5,  friendshipBonusPct: 40, specialty: true  },
+  { name: "サンプルSR・賢さ",      type: "wit",     bond: 50, trainingBonusPct: 5,  friendshipBonusPct: 20, specialty: false },
+  { name: "サンプルSSR・根性",     type: "guts",    bond: 65, trainingBonusPct: 7,  friendshipBonusPct: 25, specialty: false },
+];
+
+let activeFacilityIndex = 0;
+
+function typeClass(t){ return "type-" + t; }
+
+function renderCardTable(){
+  const tbody = document.getElementById("cardBody");
+  tbody.innerHTML = "";
+  cards.forEach((c, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><span class="type-badge ${typeClass(c.type)}"></span></td>
+      <td><input type="text" value="${c.name}" onchange="cards[${i}].name=this.value"></td>
+      <td>
+        <select onchange="cards[${i}].type=this.value; renderCardTable(); renderFacilityCheckboxes();">
+          ${["speed","stamina","power","guts","wit","friend"].map(t=>
+            `<option value="${t}" ${c.type===t?"selected":""}>${t}</option>`).join("")}
+        </select>
+      </td>
+      <td><input type="number" value="${c.bond}" min="0" max="100" onchange="cards[${i}].bond=Number(this.value)"></td>
+      <td><input type="number" value="${c.trainingBonusPct}" onchange="cards[${i}].trainingBonusPct=Number(this.value)"></td>
+      <td><input type="number" value="${c.friendshipBonusPct}" onchange="cards[${i}].friendshipBonusPct=Number(this.value)"></td>
+      <td><input type="checkbox" ${c.specialty?"checked":""} onchange="cards[${i}].specialty=this.checked"></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderFacilityTabs(){
+  const wrap = document.getElementById("facilityTabs");
+  wrap.innerHTML = "";
+  CONFIG.facilities.forEach((f, i) => {
+    const el = document.createElement("div");
+    el.className = "facility-tab" + (i===activeFacilityIndex ? " active" : "");
+    el.innerHTML = `<span class="type-badge ${typeClass(f.type)}"></span>${f.label}`;
+    el.onclick = () => { activeFacilityIndex = i; renderFacilityTabs(); renderFacilityCheckboxes(); };
+    wrap.appendChild(el);
+  });
+}
+
+function renderFacilityCheckboxes(){
+  const wrap = document.getElementById("cardCheckboxes");
+  wrap.innerHTML = "";
+  cards.forEach((c, i) => {
+    const id = "cardchk_" + i;
+    const label = document.createElement("label");
+    label.style.display = "block";
+    label.innerHTML = `<input type="checkbox" id="${id}" checked> <span class="type-badge ${typeClass(c.type)}"></span>${c.name}`;
+    wrap.appendChild(label);
+  });
+}
+
+function calcSingle(){
+  const facility = CONFIG.facilities[activeFacilityIndex];
+  const level = Math.min(5, Math.max(1, Number(document.getElementById("facilityLevel").value)));
+  const motivation = Number(document.getElementById("motivation").value);
+  const base = facility.baseByLevel[level - 1];
+
+  let selectedCards = [];
+  cards.forEach((c, i) => {
+    const chk = document.getElementById("cardchk_" + i);
+    if (chk && chk.checked) selectedCards.push(c);
+  });
+
+  // 練習効果%の合計（加算）
+  let trainingBonusSum = selectedCards.reduce((s, c) => s + c.trainingBonusPct, 0) / 100;
+
+  // 友情ボーナス：絆ゲージが閾値以上のカードのうち、最大値を採用（簡略化）
+  let friendshipBonus = 0;
+  selectedCards.forEach(c => {
+    if (c.bond >= CONFIG.friendshipThreshold) {
+      friendshipBonus = Math.max(friendshipBonus, c.friendshipBonusPct / 100);
+    }
+  });
+
+  // 得意練習ボーナス：同タイプかつspecialty=trueのカードが1枚でもいれば加算
+  let specialtyBonus = 0;
+  if (selectedCards.some(c => c.specialty && c.type === facility.type)) {
+    specialtyBonus = CONFIG.specialtyBonus;
+  }
+
+  const multiplier = 1 + trainingBonusSum + friendshipBonus + specialtyBonus + motivation;
+  const gain = Math.floor(base * multiplier);
+
+  const box = document.getElementById("singleResult");
+  box.innerHTML = `
+    <div class="result-card">
+      <div class="label">${facility.label} 上昇値</div>
+      <div class="value">+${gain}</div>
+      <div class="sub">基礎値 ${base} × 倍率 ${multiplier.toFixed(2)}</div>
+    </div>
+    <div class="result-card" style="background:#3a3a3a;">
+      <div class="label">練習効果ボーナス</div>
+      <div class="value">+${Math.round(trainingBonusSum*100)}%</div>
+    </div>
+    <div class="result-card" style="background:#3a3a3a;">
+      <div class="label">友情ボーナス</div>
+      <div class="value">+${Math.round(friendshipBonus*100)}%</div>
+    </div>
+    <div class="result-card" style="background:#3a3a3a;">
+      <div class="label">得意練習ボーナス</div>
+      <div class="value">+${Math.round(specialtyBonus*100)}%</div>
+    </div>
+  `;
+}
+
+function renderPlanTable(){
+  const tbody = document.getElementById("planBody");
+  tbody.innerHTML = "";
+  CONFIG.facilities.forEach((f, i) => {
+    const avgBase = f.baseByLevel[4]; // レベル5基準の平均上昇の目安
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><span class="type-badge ${typeClass(f.type)}"></span>${f.label}</td>
+      <td><input type="number" id="plan_current_${i}" value="300" style="width:60px;"></td>
+      <td><input type="number" id="plan_count_${i}" value="10" style="width:50px;"></td>
+      <td id="plan_avg_${i}">-</td>
+      <td id="plan_gain_${i}">-</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function calcPlan(){
+  let currentTotal = 0, countTotal = 0, gainTotal = 0;
+  const avgTrainingBonusSum = cards.reduce((s,c)=>s+c.trainingBonusPct,0)/100;
+  const avgFriendshipBonus = Math.max(0, ...cards.filter(c=>c.bond>=CONFIG.friendshipThreshold).map(c=>c.friendshipBonusPct/100), 0);
+
+  CONFIG.facilities.forEach((f, i) => {
+    const current = Number(document.getElementById(`plan_current_${i}`).value);
+    const count = Number(document.getElementById(`plan_count_${i}`).value);
+    const base = f.baseByLevel[4];
+    const specialtyBonus = cards.some(c=>c.specialty && c.type===f.type) ? CONFIG.specialtyBonus : 0;
+    const multiplier = 1 + avgTrainingBonusSum + avgFriendshipBonus + specialtyBonus;
+    const avgGain = Math.floor(base * multiplier);
+    const gain = avgGain * count;
+
+    document.getElementById(`plan_avg_${i}`).textContent = "+" + avgGain;
+    document.getElementById(`plan_gain_${i}`).textContent = "+" + gain;
+
+    currentTotal += current;
+    countTotal += count;
+    gainTotal += gain;
+  });
+
+  document.getElementById("planCurrentTotal").textContent = currentTotal;
+  document.getElementById("planCountTotal").textContent = countTotal;
+  document.getElementById("planGainTotal").textContent = "+" + gainTotal + " → 理論値 " + (currentTotal + gainTotal);
+}
+
+// init
+renderCardTable();
+renderFacilityTabs();
+renderFacilityCheckboxes();
+renderPlanTable();
+</script>
+
+</body>
+</html>
