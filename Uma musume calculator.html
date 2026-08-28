@@ -278,6 +278,15 @@
     <button class="calc-btn" onclick="calcPlan()">育成プラン全体を計算</button>
   </section>
 
+  <section>
+    <h2><span class="num">04</span> データの保存</h2>
+    <p class="desc">編成とプラン入力を保存します。Claude上でアーティファクトとして開いている場合はクラウドの永続ストレージに、それ以外（ダウンロードしたファイルを直接開いた場合など）はJSONファイルの書き出し/読み込みにフォールバックします。編成データは共有領域に保存するため、このツールを開いた他の人からも参照できる点はご了承ください。</p>
+    <button class="calc-btn" onclick="saveAll()">保存</button>
+    <button class="calc-btn" style="background:#7a7462;" onclick="loadAll()">読み込み</button>
+    <input type="file" id="importFile" accept="application/json" style="display:none" onchange="handleImportFile(this)">
+    <p id="storageStatus" style="font-size:12px; color:#7a7462; margin-top:10px;"></p>
+  </section>
+
 </main>
 
 <footer>
@@ -290,12 +299,15 @@
    差し替えれば、計算ロジックは変更不要。
    ============================================================ */
 const CONFIG = {
+  // 出典: 神ゲー攻略「トレーニングレベルの上げ方と上昇値の一覧」
+  // グランドライブシナリオ / やる気普通 / 成長率なし / 練習相手なし 基準
+  // 主ステータスの上昇値のみ反映（副ステータス上昇は未反映・要拡張）
   facilities: [
-    { key: "speed",   label: "スピード", type: "speed",   baseByLevel: [7,8,9,10,11] },
-    { key: "stamina", label: "スタミナ", type: "stamina", baseByLevel: [6,7,8,9,10] },
-    { key: "power",   label: "パワー",   type: "power",   baseByLevel: [7,8,8,9,10] },
-    { key: "guts",    label: "根性",     type: "guts",    baseByLevel: [6,7,7,8,9] },
-    { key: "wit",     label: "賢さ",     type: "wit",     baseByLevel: [5,6,6,7,8] },
+    { key: "speed",   label: "スピード", type: "speed",   baseByLevel: [8,9,10,11,12] },
+    { key: "stamina", label: "スタミナ", type: "stamina", baseByLevel: [8,9,10,11,12] },
+    { key: "power",   label: "パワー",   type: "power",   baseByLevel: [9,10,11,12,13] },
+    { key: "guts",    label: "根性",     type: "guts",    baseByLevel: [7,8,9,10,11] },
+    { key: "wit",     label: "賢さ",     type: "wit",     baseByLevel: [6,7,8,9,10] },
   ],
   // 絆ゲージがこの値以上で「友情トレーニング」が発生しうる
   friendshipThreshold: 80,
@@ -462,11 +474,102 @@ function calcPlan(){
   document.getElementById("planGainTotal").textContent = "+" + gainTotal + " → 理論値 " + (currentTotal + gainTotal);
 }
 
+/* ============================================================
+   永続化レイヤー: Claude上でアーティファクトとして開いている場合は
+   window.storage（永続KVS）を使う。ローカルファイルとして直接開いた
+   場合は window.storage が存在しないため、JSONの書き出し/読み込みに
+   フォールバックする。
+   ============================================================ */
+const Store = {
+  available: typeof window.storage !== "undefined",
+  async save(key, value, shared=false){
+    if(!this.available) return false;
+    try{
+      await window.storage.set(key, JSON.stringify(value), shared);
+      return true;
+    }catch(e){ console.error("storage save error", e); return false; }
+  },
+  async load(key, shared=false){
+    if(!this.available) return null;
+    try{
+      const res = await window.storage.get(key, shared);
+      return res ? JSON.parse(res.value) : null;
+    }catch(e){ return null; } // キー未存在時もここに来る
+  }
+};
+
+function collectPlanInput(){
+  const plan = {};
+  CONFIG.facilities.forEach((f,i)=>{
+    plan[f.key] = {
+      current: Number(document.getElementById(`plan_current_${i}`).value),
+      count: Number(document.getElementById(`plan_count_${i}`).value)
+    };
+  });
+  return plan;
+}
+
+function applyPlanInput(plan){
+  CONFIG.facilities.forEach((f,i)=>{
+    if(plan[f.key]){
+      document.getElementById(`plan_current_${i}`).value = plan[f.key].current;
+      document.getElementById(`plan_count_${i}`).value = plan[f.key].count;
+    }
+  });
+}
+
+async function saveAll(){
+  const status = document.getElementById("storageStatus");
+  if(Store.available){
+    const ok1 = await Store.save("master:cards", cards, true);
+    const ok2 = await Store.save("my:plan", collectPlanInput(), false);
+    status.textContent = (ok1 && ok2) ? "保存しました" : "保存に失敗した項目があります";
+  } else {
+    const blob = new Blob([JSON.stringify({cards, plan: collectPlanInput()}, null, 2)], {type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "uma_tool_data.json";
+    a.click();
+    status.textContent = "永続ストレージが使えない環境のため、JSONファイルをダウンロードしました";
+  }
+}
+
+async function loadAll(){
+  const status = document.getElementById("storageStatus");
+  if(Store.available){
+    const savedCards = await Store.load("master:cards", true);
+    const savedPlan = await Store.load("my:plan", false);
+    if(savedCards){ cards = savedCards; renderCardTable(); renderFacilityCheckboxes(); }
+    if(savedPlan){ applyPlanInput(savedPlan); }
+    status.textContent = (savedCards || savedPlan) ? "保存済みデータを読み込みました" : "保存済みデータはありません";
+  } else {
+    document.getElementById("importFile").click();
+  }
+}
+
+function handleImportFile(input){
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try{
+      const data = JSON.parse(e.target.result);
+      if(data.cards){ cards = data.cards; renderCardTable(); renderFacilityCheckboxes(); }
+      if(data.plan){ applyPlanInput(data.plan); }
+      document.getElementById("storageStatus").textContent = "ファイルから読み込みました";
+    }catch(err){
+      document.getElementById("storageStatus").textContent = "読み込みに失敗しました";
+    }
+  };
+  reader.readAsText(file);
+}
+
 // init
 renderCardTable();
 renderFacilityTabs();
 renderFacilityCheckboxes();
 renderPlanTable();
+if(Store.available){ loadAll(); }
 </script>
 
 </body>
